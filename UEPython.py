@@ -106,9 +106,16 @@ def LimparTagsAY():
             if str(tag).startswith(prefixQuantidade):
                 actorTags.remove(tag)
             
-def CriarLevelSequenceTracks(dataTable):
+def CriarLevelSequenceTracksB(dataTable):
     
     print('CriarLevelSequenceTracks')
+
+    # Pega os nomes das linhas da DataTable
+    dtRowNames = dataTableLibrary.get_data_table_row_names(dataTable)
+
+    # Para cada nome de linha criar uma track na sequence
+    for rowName in dtRowNames:
+        print(rowName)
 
     # Pega os atores selectionados
     actorSubSystem = unreal.get_editor_subsystem(actorUtils)
@@ -123,26 +130,177 @@ def CriarLevelSequenceTracks(dataTable):
         # Pega a LevelSequence que esta aberta
         levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
 
-        # Pega a MovieSequence da LevelSequence
-        movieSequence = lsActor.get_sequence()
-
         # Pega todos os atores com a tag
         actorsWithTag = unreal.GameplayStatics.get_all_actors_of_class_with_tag(lsActor, unreal.StaticMeshActor, 'AYTF_FundacaoProfunda')
-        
+        print('Existem ' + str(len(actorsWithTag)) + ' Atores com a TAG')
+
+        # Cria um Array com o primeiro ator
+        firstActorArray = [actorsWithTag[0]]
+
+        # Pega o LevelSequenceEditorSubSystem
+        editorSubsystem = unreal.get_editor_subsystem(unreal.LevelSequenceEditorSubsystem)
+
         bindings = unreal.MovieSceneSequence.get_bindings(levelSequence)
 
-        trackPadraomaterial = []
-
-        # Duplica a track
         for bind in bindings:
             tracks = bind.get_tracks()
             for track in tracks:
-                if track.get_display_name() == 'TrackMaterialPadrao'
-                trackPadraomaterial.append(track)
+                print(track)
                 sections = track.get_sections()
+                for section in sections:
+                    print(section)
+                    channelsParameter = section.get_all_channels()
+                    for channel in channelsParameter:
+                        print(channel)
 
-        for actor in actorsWithTag:
-            bindings.append(trackPadraomaterial[0])
+        
+        # Adiciona o primeiro ator a Sequence
+        #actorTrack = editorSubsystem.add_actors(firstActorArray)
+
+        # Adiciona o primeiro componente do ator como uma track
+        actorComponent = firstActorArray[0].get_component_by_class(unreal.StaticMeshComponent)
+        componentBinding = levelSequence.add_possessable(actorComponent)
+
+        # Adiciona uma track para alterar o valor do material do component
+        materialValueTrack = componentBinding.add_track(unreal.MovieSceneComponentMaterialTrack)
+
+        # Adiciona uma track para alterar o material do component
+        materialChangeTrack = componentBinding.add_track(unreal.MovieScenePrimitiveMaterialTrack)
+
+        # Adiciona uma track para alterar a visibilidade do ator
+        visibilityTrack = componentBinding.get_parent().add_track(unreal.MovieSceneVisibilityTrack)
+
+        # Adiciona uma seção com propriedade as tracks
+        newSectionValue = materialValueTrack.add_section()
+        newSectionMaterial = materialChangeTrack.add_section()
+        newSectionVisibility = visibilityTrack.add_section()
+
+        # Cast as seçãos criadas para seus tipos corretos
+        parameterSection = unreal.MovieSceneParameterSection.cast(newSectionValue)
+        materialChangeSection = unreal.MovieScenePrimitiveMaterialSection.cast(newSectionMaterial)
+        visibilitySection = unreal.MovieSceneBoolSection.cast(newSectionVisibility)
+
+        # Refresh na Sequence para mostrar as alterações
+        unreal.LevelSequenceEditorBlueprintLibrary.refresh_current_level_sequence()
+
+        # Adiciona uma chave de parâmetro escalar e define seu valor
+        inicio = 100
+        fim = 200
+        inicioFrame = unreal.FrameNumber(inicio)
+        fimFrame = unreal.FrameNumber(fim)
+        antesDoInicioFrame = unreal.FrameNumber(inicio-1)
+        aposOFimFrame = unreal.FrameNumber(fim+1)
+
+        # Adiciona uma chave para criar automaticamente um channel e poder adicionar as chaves corretamente depois
+        parameterSection.add_scalar_parameter_key("Curve", unreal.FrameNumber(0), 0.0)
+
+        # Pega todos os channels da seção
+        channelsParameter = parameterSection.get_all_channels()
+        channelsMaterial = materialChangeSection.get_all_channels()
+        channelsVisibility = visibilitySection.get_all_channels()
+
+        # Cast o channel
+        floatChannel = unreal.MovieSceneScriptingFloatChannel.cast(channelsParameter[0])
+        materialChannel = unreal.MovieSceneScriptingObjectPathChannel.cast(channelsMaterial[0])
+        boolChannel = unreal.MovieSceneScriptingBoolChannel.cast(channelsVisibility[0])
+
+        # Pega os materiais
+        materialObjeto = unreal.load_object(name = '/Game/Materials/M_CorBranca', outer = None)
+        print(materialObjeto)
+        materialEfeito = unreal.load_object(name = '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
+        print(materialEfeito)
+
+        # Adiciona as chaves corretamente
+        floatChannel.add_key(inicioFrame, 0.0,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        floatChannel.add_key(fimFrame, 2.0,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+        #materialChannel.add_key(antesDoInicioFrame,materialObjeto,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        materialChannel.add_key(antesDoInicioFrame,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        materialChannel.add_key(fimFrame,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        materialChannel.add_key(aposOFimFrame,materialObjeto,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+        boolChannel.add_key(antesDoInicioFrame, False, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+        boolChannel.add_key(inicioFrame, True, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+        # Remove a chave padrão
+        chavePadrao = floatChannel.get_keys()[0]
+        floatChannel.remove_key(chavePadrao)
+
+        # Define o range da seção
+        newSectionValue.set_start_frame_bounded(True)
+        newSectionValue.set_end_frame_bounded(True)
+
+        # Adiciona todos os atores com a mesma TAG a track
+        editorSubsystem.add_actors_to_binding(actorsWithTag, componentBinding.get_parent())
+
+
+
+        #unreal.LevelSequenceEditorBlueprintLibrary.refresh_current_level_sequence()
+
+
+        # newSection.add
+        # floatTrack = componentBinding.add_track(unreal.MovieSceneMaterialParameterSection)
+
+        #componentBinding.set_parent(actorsWithTag[0])
+
+        # # Adiciona todos os atores com a mesma TAG a track
+        # editorSubsystem.add_actors_to_binding(actorsWithTag, actorTrack[0])
+
+        # # Adiciona uma track para alterar o material do component
+        # materialTrack = actorTrack[0].add_track(unreal.MovieSceneComponentMaterialTrack)
+
+        # # Adiciona uma seção a track de material
+        # 
+        # newSection.
+        # section.set_compo
+
+        # Define o componente da seção
+
+
+        # # Define o range da seção
+        # newSection.set_range(100,200)
+
+        # # Pega os canais da seção
+        # channels = newSection.get_channels()
+
+        # # # Adiciona um novo canal a seção
+        # channels.
+
+        # 
+        # channel = newSection.get_channels()[0]
+
+
+
+
+
+
+        
+        
+        # bindings = unreal.MovieSceneSequence.get_bindings(levelSequence)
+
+        # print('Quantidade de BINDINGS: ' + str(len(bindings)))
+
+        # trackPadraomaterial = []
+
+        # # Duplica a track
+        # for bind in bindings:
+        #     if bind.get_display_name() == 'TrackMaterialPadrao':
+        #         print('Encontrou a track TrackMaterialPadrao')
+        #         trackPadraomaterial.append(bind)
+        #     # for track in tracks:
+        #     #     print(track)
+        #         # if track.get_display_name() == 'TrackMaterialPadrao':
+        #         #     trackPadraomaterial.append(track)
+        #         #     print('Encontrou a track TrackMaterialPadrao')
+        #         #     sections = track.get_sections()
+
+        # actorTrack = print(levelSequenceSubSystem)
+
+        # for actor in actorsWithTag:
+            
+        #     copiedTrack = unreal.LevelSequenceEditorSubsystem.copy_tracks(trackPadraomaterial)
+        #     print(copiedTrack)
+
 
         # for bind in bindings:
         #     tracks = bind.get_tracks()
@@ -168,16 +326,16 @@ def CriarLevelSequenceTracks(dataTable):
         
         
 
-        for bind in bindings:
-            tracks = bind.get_tracks()
-            for track in tracks:
-                print(track)
-                sections = track.get_sections()
-                for section in sections:
-                    print(section)
-                    channels = section.get_all_channels()
-                    for channel in channels:
-                        print(channel)
+        # for bind in bindings:
+        #     tracks = bind.get_tracks()
+        #     for track in tracks:
+        #         print(track)
+        #         sections = track.get_sections()
+        #         for section in sections:
+        #             print(section)
+        #             channels = section.get_all_channels()
+        #             for channel in channels:
+        #                 print(channel)
                     
 
 
@@ -225,6 +383,140 @@ def CriarLevelSequenceTracks(dataTable):
     else:
         print('Não é um LevelSequenceActor, selecione um LevelSequenceActor no Level')
 
+def CriarLevelSequenceTracks(dataTable, dataInicial, dataFinal):
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Calcula o tempo base da sequence
+    tempoTotalSequence = levelSequence.get_playback_end_seconds()
+    diasTotais = CalcularDiasTotais(dataInicial, dataFinal)
+    print('Dias totais: ' + str(diasTotais))
+    sequenceFrameRate = levelSequence.get_display_rate()
+
+    # Pega o LevelSequenceEditorSubSystem
+    editorSubsystem = unreal.get_editor_subsystem(unreal.LevelSequenceEditorSubsystem)
+
+    # Pega as colunas da DataTable
+    dataTableColumns = PegarDadosDataTableCronograma(dataTable)
+
+    print(dataTableColumns)
+    print(dataTableColumns[0])
+
+    # Caso tenham colunas
+    if len(dataTableColumns) > 0:
+        # Para cada coluna
+        for i in range(len(dataTableColumns[0])):
+            
+            tarefa = prefixTarefa + str(dataTableColumns[0][i]) # Nome da tarefa
+            dataInicialTarefa = unreal.MathLibrary.date_time_from_string(dataTableColumns[1][i])
+            dataFinalTarefa = unreal.MathLibrary.date_time_from_string(dataTableColumns[2][i])
+
+            tempoInicialDaTarefa = CalcularTempoInicialDaTarefa(tempoTotalSequence, diasTotais, dataInicial, dataInicialTarefa)
+            tempoFinalTarefa = CalcularTempoFinalDaTarefa(tempoTotalSequence, diasTotais, dataInicial, dataFinalTarefa)
+
+            print('Tarefa: ' + tarefa + 'Tempo inicial: ' + str(tempoInicialDaTarefa) + 'Tempo final: ' + str(tempoFinalTarefa))
+
+            # Pega todos os atores com a tag
+            actorsWithTag = unreal.GameplayStatics.get_all_actors_of_class_with_tag(selectedActors[0], unreal.StaticMeshActor, tarefa)
+            print('Existem ' + str(len(actorsWithTag)) + ' Atores com a TAG ' + str(tarefa))
+
+            # Cria um Array com o primeiro ator caso existam atores com a tag
+            if len(actorsWithTag) > 0:
+
+                # Cria um Array com o primeiro ator
+                firstActorArray = [actorsWithTag[0]]
+
+                # Calcula os tempos em FRAMES
+                inicio = unreal.MathLibrary.round(tempoInicialDaTarefa*sequenceFrameRate.numerator)
+                fim = unreal.MathLibrary.round(tempoFinalTarefa*sequenceFrameRate.numerator)
+                inicioFrame = unreal.FrameNumber(inicio)
+                fimFrame = unreal.FrameNumber(fim)
+                antesDoInicioFrame = unreal.FrameNumber(inicio-1)
+                aposOFimFrame = unreal.FrameNumber(fim+1)
+
+                # Pega o LevelSequenceEditorSubSystem
+                editorSubsystem = unreal.get_editor_subsystem(unreal.LevelSequenceEditorSubsystem)
+                
+                # Adiciona o primeiro ator a Sequence
+                #actorTrack = editorSubsystem.add_actors(firstActorArray)
+
+                # Adiciona o primeiro componente do ator como uma track
+                actorComponent = firstActorArray[0].get_component_by_class(unreal.StaticMeshComponent)
+                componentBinding = levelSequence.add_possessable(actorComponent)
+
+                # Adiciona uma track para alterar o valor do material do component
+                materialValueTrack = componentBinding.add_track(unreal.MovieSceneComponentMaterialTrack)
+
+                # Adiciona uma track para alterar o material do component
+                materialChangeTrack = componentBinding.add_track(unreal.MovieScenePrimitiveMaterialTrack)
+
+                # Adiciona uma track para alterar a visibilidade do ator
+                visibilityTrack = componentBinding.get_parent().add_track(unreal.MovieSceneVisibilityTrack)
+
+                # Adiciona uma seção com propriedade as tracks
+                newSectionValue = materialValueTrack.add_section()
+                newSectionMaterial = materialChangeTrack.add_section()
+                newSectionVisibility = visibilityTrack.add_section()
+
+                # Cast as seçãos criadas para seus tipos corretos
+                parameterSection = unreal.MovieSceneParameterSection.cast(newSectionValue)
+                materialChangeSection = unreal.MovieScenePrimitiveMaterialSection.cast(newSectionMaterial)
+                visibilitySection = unreal.MovieSceneBoolSection.cast(newSectionVisibility)
+
+                # Refresh na Sequence para mostrar as alterações
+                unreal.LevelSequenceEditorBlueprintLibrary.refresh_current_level_sequence()
+
+                # Adiciona uma chave para criar automaticamente um channel e poder adicionar as chaves corretamente depois
+                parameterSection.add_scalar_parameter_key("Curve", unreal.FrameNumber(0), 0.0)
+
+                # Pega todos os channels da seção
+                channelsParameter = parameterSection.get_all_channels()
+                channelsMaterial = materialChangeSection.get_all_channels()
+                channelsVisibility = visibilitySection.get_all_channels()
+
+                # Cast o channel
+                floatChannel = unreal.MovieSceneScriptingFloatChannel.cast(channelsParameter[0])
+                materialChannel = unreal.MovieSceneScriptingObjectPathChannel.cast(channelsMaterial[0])
+                boolChannel = unreal.MovieSceneScriptingBoolChannel.cast(channelsVisibility[0])
+
+                # Pega os materiais
+                #materialObjeto = unreal.load_object(name = '/Game/Materials/M_CorBranca', outer = None)
+                materialObjeto = unreal.StaticMeshComponent.cast(actorComponent).get_material(0)
+                #materialEfeito = unreal.load_object(name = '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
+                materialEfeito = unreal.load_object(name = dataTableColumns[3][i], outer = None)
+
+                # Adiciona as chaves corretamente
+                floatChannel.add_key(inicioFrame, 0.0,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+                floatChannel.add_key(fimFrame, 2.0,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+                #materialChannel.add_key(antesDoInicioFrame,materialObjeto,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+                materialChannel.add_key(antesDoInicioFrame,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+                materialChannel.add_key(fimFrame,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+                materialChannel.add_key(aposOFimFrame,materialObjeto,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+                boolChannel.add_key(antesDoInicioFrame, False, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+                boolChannel.add_key(inicioFrame, True, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+                # Remove a chave padrão
+                chavePadrao = floatChannel.get_keys()[0]
+                floatChannel.remove_key(chavePadrao)
+
+                # Define o range da seção
+                newSectionValue.set_start_frame_bounded(True)
+                newSectionValue.set_end_frame_bounded(True)
+
+                # Adiciona todos os atores com a mesma TAG a track
+                editorSubsystem.add_actors_to_binding(actorsWithTag, componentBinding.get_parent())
+
+                # Renomeia a track
+                componentBinding.get_parent().set_display_name(str(dataTableColumns[0][i]))
+    else:
+        print('Nenhum dado encontrado na DataTable')
 
 
 # endregion
@@ -266,6 +558,66 @@ def DeletarTag(prefixo, tagStrings, tags):
     if any(s for s in tagStrings if s.startswith(prefixo)):
         index = tagStrings.index([s for s in tagStrings if s.startswith(prefixo)][0])
         unreal.Array.pop(tags, index)
+
+def PegarDadosDataTableCronograma(dataTable):
+
+    print('PegarDadosDataTableCronograma')
+
+    # Estrutura da DataTable
+    #structure = unreal.load_object(name = '/Game/Timeline/STR_CronogramaStruct.STR_CronogramaStruct', outer = None)
+
+    # Pega os nomes das linhas da DataTable
+    dtRowNames = unreal.DataTableFunctionLibrary.get_data_table_row_names(dataTable)
+
+    # Colunas da DataTable
+    dataTableColumns = []
+    columnInicio = unreal.DataTableFunctionLibrary.get_data_table_column_as_string(dataTable, 'Inicio')
+    columnTermino = unreal.DataTableFunctionLibrary.get_data_table_column_as_string(dataTable, 'Termino')
+    columnMaterialEfeito = unreal.DataTableFunctionLibrary.get_data_table_column_as_string(dataTable, 'MaterialEfeito')
+
+    dataTableColumns.append(dtRowNames)
+    dataTableColumns.append(columnInicio)
+    dataTableColumns.append(columnTermino)
+    dataTableColumns.append(columnMaterialEfeito)
+
+    return dataTableColumns
+
+def CalcularDiasTotais(dataInicial, dataFinal):
+
+    dataInicial = unreal.DateTime.cast(dataInicial)
+    dataFinal = unreal.DateTime.cast(dataFinal)
+
+    diasTotais = unreal.MathLibrary.get_days(unreal.MathLibrary.subtract_date_time_date_time(dataFinal, dataInicial))
+
+    return(diasTotais)
+   
+def CalcularTempoInicialDaTarefa(tempoDaSequence, diasTotais, dataInicial, dataInicialTarefa):
+
+    dataInicial = unreal.DateTime.cast(dataInicial)
+    dataInicialTarefa = unreal.DateTime.cast(dataInicialTarefa)
+
+    diasAteIniciarATarefa = unreal.MathLibrary.get_days(unreal.MathLibrary.subtract_date_time_date_time(dataInicialTarefa, dataInicial))
+
+    print(diasAteIniciarATarefa)
+
+    tempoInicial = (diasAteIniciarATarefa / diasTotais) * tempoDaSequence
+
+    return tempoInicial
+
+def CalcularTempoFinalDaTarefa(tempoDaSequence, diasTotais, dataInicial, dataFinalTarefa):
+
+    dataInicial = unreal.DateTime.cast(dataInicial)
+    dataFinalTarefa = unreal.DateTime.cast(dataFinalTarefa)
+
+    diasAteFinalizarATarefa = unreal.MathLibrary.get_days(unreal.MathLibrary.subtract_date_time_date_time(dataFinalTarefa, dataInicial))
+
+    print(diasAteFinalizarATarefa)
+
+    tempoFinal = (diasAteFinalizarATarefa / diasTotais) * tempoDaSequence
+
+    return tempoFinal
+
+
 
 # endregion
 
