@@ -268,9 +268,12 @@ def CriarLevelSequenceTracks(dataTable, dataInicial, dataFinal, usedate, usefirs
                 actorComponent = firstActorArray[0].get_component_by_class(unreal.StaticMeshComponent)
                 componentBinding = levelSequence.add_possessable(actorComponent)
 
+                # Pega os novos outros componentes caso existam
+                print(actorComponent);
+
                 CriarTrackVisibilidade(componentBinding, frameAntesDoInicial, frameInicial)
 
-                CriarTrackTrocaDeMaterial(componentBinding, actorComponent, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal )
+                CriarTrackTrocaDeMateriais(componentBinding, actorComponent, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal )
 
                 CriarTrackParametroDeMaterial(componentBinding, frameInicial, frameFinal)
 
@@ -887,6 +890,7 @@ def PegarInformacoesDasTracks():
     for bind in bindings:
         tracks = bind.get_tracks()
         for track in tracks:
+            print(f"NOME DA TRACK: {track.get_display_name()}")
             print(track)
             sections = track.get_sections()
             for section in sections:
@@ -965,9 +969,13 @@ def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, 
                 if tarefaCronograma is not None:
 
                     print('Tarefa do cronograma: ' + str(tarefaCronograma.tarefa))
+                    print('Animação da tarefa ' + str(tarefaCronograma.animacao))
 
                     # Adiciona o primeiro componente do ator como uma track
                     actorComponents = actor.get_components_by_class(unreal.StaticMeshComponent)
+
+                    # Animação da tarefa
+                    animacao = tarefaCronograma.animacao
 
                     # Material Efeito 
                     materialEfeito = tarefaCronograma.materialEfeito
@@ -1090,6 +1098,7 @@ def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, 
 
                         print(frameInicial)
                         print(frameFinal)
+                        print(animacao)
 
                         for i in range(len(componentesOrdenados)):
 
@@ -1125,8 +1134,6 @@ def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, 
                                 CriarTrackTrocaDeMaterial(componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
 
                                 CriarTrackParametroDeMaterial(componentBinding, frameInicial, frameFinal)
-
-
 
 def CriarLevelSequenceComplexTracksB(dataTable, dataInicial, dataFinal, usedate, usefirstlastdate,
                                     coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y", 
@@ -1722,6 +1729,46 @@ def CriarTrackTrocaDeMaterial(componentBinding, actorComponent, materialEfeito, 
     materialChangeSection.set_start_frame_bounded(True)
     materialChangeSection.set_end_frame_bounded(True)
 
+def CriarTrackTrocaDeMateriais(componentBinding, actorComponent, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal):
+    #print("CriarTrackVisibilidade")
+    
+    # Pega os materiais originais do componente
+    materials = unreal.StaticMeshComponent.cast(actorComponent).get_materials()
+
+    print(f"QUANTIDADE DE MATERIAIS: {len(materials)}")
+
+    for i in range(len(materials)):
+
+        # Adiciona uma track para alterar o material do component
+        materialChangeTrack = componentBinding.add_track(unreal.MovieScenePrimitiveMaterialTrack)
+        unreal.MovieScenePrimitiveMaterialTrack.cast(materialChangeTrack).set_material_index(i)
+
+        # Adiciona uma seção com propriedade as tracks
+        newSectionMaterial = materialChangeTrack.add_section()
+
+        # Cast as seçãos criadas para seus tipos corretos
+        materialChangeSection = unreal.MovieScenePrimitiveMaterialSection.cast(newSectionMaterial)
+
+        # Pega todos os channels da seção
+        channelsMaterial = materialChangeSection.get_all_channels()
+
+        # Cast o channel
+        materialChannel = unreal.MovieSceneScriptingObjectPathChannel.cast(channelsMaterial[0])
+
+        # Pega os materiais originais do componente
+        materialObjeto = unreal.StaticMeshComponent.cast(actorComponent).get_material(i)
+
+        # Adiciona as chaves
+        materialChannel.add_key(frameAntesDoInicial,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        materialChannel.add_key(frameFinal,materialEfeito,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        materialChannel.add_key(frameAposOFinal,materialObjeto,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+        # Define o range da seção
+        materialChangeSection.set_start_frame_bounded(True)
+        materialChangeSection.set_end_frame_bounded(True)
+
+
+
 def CriarTrackParametroDeMaterial(componentBinding, frameInicial, frameFinal):
     #print("CriarTrackVisibilidade")
 
@@ -1756,7 +1803,7 @@ def CriarTrackParametroDeMaterial(componentBinding, frameInicial, frameFinal):
     parameterSection.set_end_frame_bounded(True)
 
 def CriarTrackMoverElementoEmZ(actor, componentBinding, frameInicial, frameFinal):
-    #print("CriarTrackVisibilidade")
+    print("CriarTrackMoverElementoEmZ")
 
     actorMeioTamanho = unreal.Vector.cast(actor.get_actor_bounds(False, False)[1])
 
