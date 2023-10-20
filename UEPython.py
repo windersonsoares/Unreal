@@ -166,11 +166,11 @@ def CriarTagComBaseNaMetadataDataTable():
 def LimparTagsAY():
 
     print('LimparTagsAY')
-
+    
     # Pega os atores selectionados
     actorSubSystem = unreal.get_editor_subsystem(actorUtils)
     selectedActors = actorSubSystem.get_selected_level_actors()
-
+    
     # Para cada ator selecionado pegar as suas tags
     for actor in selectedActors:
         actorTags = actor.tags
@@ -535,6 +535,632 @@ def CriarLevelSequenceTracksOnlyVisibility(dataTable, dataInicial, dataFinal, us
    
     else:
         print('Nenhum dado encontrado na DataTable')
+
+
+def RemoverStringDoNomeDoAsset(string):
+
+    print('RemoverStringDoNomeDoAsset')
+
+    # Pega os assets selectionados
+    selectedAssets = unreal.EditorUtilityLibrary.get_selected_assets()
+
+    # Salva no log
+    unreal.log("Selecionados {} assets".format(len(selectedAssets)))
+    replaced = 0
+
+    # Para cada ator selecionado pegar as suas tags
+    for asset in selectedAssets:
+        assetName = unreal.SystemLibrary().get_object_name(asset)
+        if unreal.StringLibrary.contains(assetName, string, use_case=False):
+            newAssetName = unreal.StringLibrary.replace(assetName, string, "")
+            unreal.EditorUtilityLibrary.rename_asset(asset, newAssetName)
+            replaced += 1
+
+    unreal.log("Foram alterados {} assets".format(replaced))
+
+
+def PegarInformacoesDasTracks():
+
+    print('PegarInformacoesDasTracks')
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+
+    bindings = unreal.MovieSceneSequence.get_bindings(levelSequence)
+
+    for bind in bindings:
+        tracks = bind.get_tracks()
+        for track in tracks:
+            print(f"NOME DA TRACK: {track.get_display_name()}")
+            print(track)
+            sections = track.get_sections()
+            for section in sections:
+                print(section)
+                channelsParameter = section.get_all_channels()
+                for channel in channelsParameter:
+                    print(channel)
+
+
+def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, usefirstlastdate,
+                                    coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
+                                    inverter_coordenada_secundaria=False, tolerancia=100, dividirComponentes=False):
+
+    # Calcular as datas do cronograma
+    datas = CalcularDataInicialEFinal(
+        dataTable, dataInicial, dataFinal, usedate, usefirstlastdate)
+
+    dataInicial = datas[0]
+    dataFinal = datas[1]
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+
+    # Calcula o tempo base da sequence
+    tempoTotalSequence = levelSequence.get_playback_end_seconds()
+    diasTotais = CalcularDiasTotais(dataInicial, dataFinal)
+    print('Dias totais: ' + str(diasTotais))
+    sequenceFrameRate = levelSequence.get_display_rate()
+
+    # Pega as colunas da DataTable
+    dataTableColumns = PegarDadosDataTableCronograma(dataTable)
+
+    # Cria a lista de objetos Tarefa
+    tarefas = []
+
+    if len(dataTableColumns) > 0:
+
+        # Para cada linha das colunas colunas
+        for i in range(len(dataTableColumns[0])):
+
+            tarefa = prefixTarefa + str(dataTableColumns[0][i])  # Nome da tarefa
+            dataInicialTarefa = unreal.MathLibrary.date_time_from_string(
+                dataTableColumns[1][i])
+            dataFinalTarefa = unreal.MathLibrary.date_time_from_string(
+                dataTableColumns[2][i])
+            animacao = dataTableColumns[4][i]
+            materialEfeito = unreal.load_object(name= dataTableColumns[3][i], outer = None)
+            tempoInicialDaTarefa = CalcularTempoInicialDaTarefa(
+                tempoTotalSequence, diasTotais, dataInicial, dataInicialTarefa)
+            tempoFinalTarefa = CalcularTempoFinalDaTarefa(
+                tempoTotalSequence, diasTotais, dataInicial, dataFinalTarefa)
+
+            tarefas.append(Tarefa(tarefa, dataInicialTarefa, dataFinalTarefa,
+                           animacao, materialEfeito, tempoInicialDaTarefa, tempoFinalTarefa))
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Pega o LevelSequenceEditorSubSystem
+    editorSubsystem = unreal.get_editor_subsystem(
+        unreal.LevelSequenceEditorSubsystem)
+
+    # Caso tenham colunas
+    if len(dataTableColumns) > 0:
+
+        # Para cada ator selecionado
+        for actor in selectedActors:
+
+            actorTags = actor.tags
+
+            tarefaDoAtor = ""
+
+            for tag in actorTags:
+                tagString = unreal.StringLibrary.conv_name_to_string(tag)
+                if tagString.startswith("AYTF_"):
+                    tarefaDoAtor = tagString
+
+            if tarefaDoAtor is not None:
+
+                tarefaCronograma = next(
+                    (tarefa for tarefa in tarefas if tarefa.tarefa == tarefaDoAtor), None)
+
+                if tarefaCronograma is not None:
+
+                    print('Tarefa do cronograma: ' + \
+                          str(tarefaCronograma.tarefa))
+                    print('Animação da tarefa ' + \
+                          str(tarefaCronograma.animacao))
+
+                    # Adiciona o primeiro componente do ator como uma track
+                    actorComponents = actor.get_components_by_class(
+                        unreal.StaticMeshComponent)
+
+                    # Animação da tarefa
+                    animacao = tarefaCronograma.animacao
+
+                    # Material Efeito
+                    materialEfeito = tarefaCronograma.materialEfeito
+
+                    # Filtra os componentes pegando apenas aqueles que possuem mesh
+                    componentesComMesh = []
+
+                    for component in actorComponents:
+                        print(component.get_name())
+                        component = unreal.StaticMeshComponent.cast(component)
+                        if unreal.SystemLibrary.is_valid(component.static_mesh):
+                            componentesComMesh.append(component)
+
+                    # Organiza os componentes de acordo com a posição
+
+                    # Determina qual índice é correspondente a coordenada escolhida
+                    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[
+                        coordenada_inicial]
+                    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[
+                        coordenada_secundaria]
+                    inverterCoordenadaInicial = inverter_coordenada_inicial
+                    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
+
+                    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
+                        componentesComMesh)
+
+                    # print('COORDENADAS DOS COMPONENTES:')
+                    # print(coordenadasDosComponentes)
+
+                    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
+                        coordenadasDosComponentes,
+                        tolerancia,
+                        tolerancia,
+                        coordenadaInicial,
+                        coordenadaSecundaria,
+                        inverterCoordenadaInicial,
+                        inverterCoordenadaSecundaria)
+
+                    # print('COORDENADAS ORDENADAS:')
+                    # print(coordenadasOrdenadas)
+
+                    coordenadasPlanificadas = PlanificarListaDePontos(
+                        coordenadasOrdenadas)
+
+                    # print('COORDENADAS ORDENADAS PLANIFICADAS:')
+                    # print(coordenadasPlanificadas)
+
+                    indices = []
+                    for coord in coordenadasPlanificadas:
+                        indices.append(coordenadasDosComponentes.index(coord))
+
+                    # print(indices)
+
+                    componentesOrdenados = []
+
+                    for indice in indices:
+                        componentesOrdenados.append(componentesComMesh[indice])
+                        print(componentesComMesh[indice])
+
+                    # Calculo dos tempos da tarefa
+
+                    tempoPorComponente = (tarefaCronograma.tempoFinalTarefa - \
+                                          tarefaCronograma.tempoInicialDaTarefa) / len(componentesComMesh)
+                    incremento = unreal.MathLibrary.round(
+                        tempoPorComponente*sequenceFrameRate.numerator)
+                    inicio = unreal.MathLibrary.round(
+                        tarefaCronograma.tempoInicialDaTarefa*sequenceFrameRate.numerator)
+                    fim = unreal.MathLibrary.round(
+                        tarefaCronograma.tempoFinalTarefa*sequenceFrameRate.numerator)
+
+                    if dividirComponentes:
+                        frameInicial = unreal.FrameNumber(inicio)
+                        frameFinal = unreal.FrameNumber(inicio + incremento)
+                        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
+                        frameAposOFinal = unreal.FrameNumber(
+                            inicio + incremento + 1)
+                        print("Tempo inicial da tarefa: " + \
+                              str(tarefaCronograma.tempoInicialDaTarefa))
+                        print("Tempo final da tarefa: " + \
+                              str(tarefaCronograma.tempoFinalTarefa))
+                        print("Tempo por componente: " + \
+                              str(tempoPorComponente))
+                        print("Frame Incremento: " + str(incremento))
+                        print("Frame inicial: " + str(frameInicial))
+                        print("Frame final: " + str(frameFinal))
+                        print("Frame anterior ao inicial: " + \
+                              str(frameAntesDoInicial))
+                        print("Frame após o final: " + str(frameAposOFinal))
+
+                        for i in range(len(componentesOrdenados)):
+
+                            if animacao == "Montagem":
+                                print("Animação: Montagem")
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackMoverComponenteEmZ(
+                                    selectedActors[0], component, componentBinding, frameInicial, frameFinal)
+
+                            elif animacao == "PreencherZ":
+                                print("Animação: PreencherZ")
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackParametroDeMaterial(
+                                    componentBinding, frameInicial, frameFinal)
+
+                            else:
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackParametroDeMaterial(
+                                    componentBinding, frameInicial, frameFinal)
+
+                            frameAntesDoInicial = unreal.FrameNumber(
+                                frameAntesDoInicial.value + incremento)
+                            frameInicial = unreal.FrameNumber(
+                                frameInicial.value + incremento)
+                            frameFinal = unreal.FrameNumber(
+                                frameFinal.value + incremento)
+                            frameAposOFinal = unreal.FrameNumber(
+                                frameAposOFinal.value + incremento)
+
+                    else:
+
+                        frameInicial = unreal.FrameNumber(inicio)
+                        frameFinal = unreal.FrameNumber(fim)
+                        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
+                        frameAposOFinal = unreal.FrameNumber(fim + 1)
+
+                        print(frameInicial)
+                        print(frameFinal)
+                        print(animacao)
+
+                        for i in range(len(componentesOrdenados)):
+
+                            if animacao == "Montagem":
+                                print("Animação: Montagem")
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackMoverElementoEmZ(
+                                    actor, componentBinding, frameInicial, frameFinal)
+
+                            elif animacao == "PreencherZ":
+                                print("Animação: PreencherZ")
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackParametroDeMaterial(
+                                    componentBinding, frameInicial, frameFinal)
+
+                            elif animacao == "Simples":
+                                print("Animação: Simples")
+                                component = componentesOrdenados[i]
+                                componentBinding = levelSequence.add_possessable(
+                                    component)
+
+                                CriarTrackVisibilidadeComponente(
+                                    componentBinding, frameAntesDoInicial, frameInicial)
+
+                                CriarTrackTrocaDeMaterial(
+                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                                CriarTrackParametroDeMaterial(
+                                    componentBinding, frameInicial, frameFinal)
+
+
+# region CÓDIGO ANTIGO
+
+""" 
+def CriarLevelSequenceComplexTracksB(dataTable, dataInicial, dataFinal, usedate, usefirstlastdate,
+                                    coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
+                                     inverter_coordenada_secundaria=False, tolerancia=100):
+
+    # Calcular as datas do cronograma
+    datas = CalcularDataInicialEFinal(
+        dataTable, dataInicial, dataFinal, usedate, usefirstlastdate)
+
+    dataInicial = datas[0]
+    dataFinal = datas[1]
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+
+    # Calcula o tempo base da sequence
+    tempoTotalSequence = levelSequence.get_playback_end_seconds()
+    diasTotais = CalcularDiasTotais(dataInicial, dataFinal)
+    print('Dias totais: ' + str(diasTotais))
+    sequenceFrameRate = levelSequence.get_display_rate()
+
+    # Pega as colunas da DataTable
+    dataTableColumns = PegarDadosDataTableCronograma(dataTable)
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Pega o LevelSequenceEditorSubSystem
+    editorSubsystem = unreal.get_editor_subsystem(
+        unreal.LevelSequenceEditorSubsystem)
+
+    # Caso tenham colunas
+    if len(dataTableColumns) > 0:
+
+        # Para cada coluna
+        for i in range(len(dataTableColumns[0])):
+
+            tarefa = prefixTarefa + str(dataTableColumns[0][i])  # Nome da tarefa
+            dataInicialTarefa = unreal.MathLibrary.date_time_from_string(
+                dataTableColumns[1][i])
+            dataFinalTarefa = unreal.MathLibrary.date_time_from_string(
+                dataTableColumns[2][i])
+            animacao = dataTableColumns[4][i]
+            materialEfeito = unreal.load_object(name= dataTableColumns[3][i], outer = None)
+            tempoInicialDaTarefa = CalcularTempoInicialDaTarefa(
+                tempoTotalSequence, diasTotais, dataInicial, dataInicialTarefa)
+            tempoFinalTarefa = CalcularTempoFinalDaTarefa(
+                tempoTotalSequence, diasTotais, dataInicial, dataFinalTarefa)
+
+            # Para cada ator selecionado
+            for actor in selectedActors:
+
+                if unreal.Array.count(actor.tags, unreal.Name.cast(tarefa)) > 0:  # Caso tenha uma tarefa da dataTable
+
+                    # Adiciona o primeiro componente do ator como uma track
+                    actorComponents = selectedActors[0].get_components_by_class(
+                        unreal.StaticMeshComponent)
+
+                    # Material Efeito
+                    materialEfeito = unreal.load_object(name= '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
+
+                    # Filtra os componentes pegando apenas aqueles que possuem mesh
+                    componentesComMesh = []
+
+                    for component in actorComponents:
+                        component = unreal.StaticMeshComponent.cast(component)
+                        if unreal.SystemLibrary.is_valid(component.static_mesh):
+                            componentesComMesh.append(component)
+
+                    # Organiza os componentes de acordo com a posição
+
+                    # Determina qual índice é correspondente a coordenada escolhida
+                    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[
+                        coordenada_inicial]
+                    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[
+                        coordenada_secundaria]
+                    inverterCoordenadaInicial = inverter_coordenada_inicial
+                    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
+
+                    print('QUANTIDADE DE COMPONENTES COM MESH:')
+                    print(len(componentesComMesh))
+
+                    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
+                        componentesComMesh)
+
+                    # print('COORDENADAS DOS COMPONENTES:')
+                    # print(coordenadasDosComponentes)
+
+                    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
+                        coordenadasDosComponentes,
+                        tolerancia,
+                        tolerancia,
+                        coordenadaInicial,
+                        coordenadaSecundaria,
+                        inverterCoordenadaInicial,
+                        inverterCoordenadaSecundaria)
+
+                    # print('COORDENADAS ORDENADAS:')
+                    # print(coordenadasOrdenadas)
+
+                    coordenadasPlanificadas = PlanificarListaDePontos(
+                        coordenadasOrdenadas)
+
+                    # print('COORDENADAS ORDENADAS PLANIFICADAS:')
+                    # print(coordenadasPlanificadas)
+
+                    indices = []
+                    for coord in coordenadasPlanificadas:
+                        indices.append(coordenadasDosComponentes.index(coord))
+
+                    # print(indices)
+
+                    componentesOrdenados = []
+
+                    for indice in indices:
+                        componentesOrdenados.append(componentesComMesh[indice])
+
+                    # Calculo dos tempos da tarefa
+                    tempoPorComponente = (
+                        tempoFinalTarefa - tempoInicialDaTarefa) / len(componentesComMesh)
+                    incremento = unreal.MathLibrary.round(
+                        tempoPorComponente*sequenceFrameRate.numerator)
+                    inicio = unreal.MathLibrary.round(
+                        tempoInicialDaTarefa*sequenceFrameRate.numerator)
+                    fim = unreal.MathLibrary.round(
+                        tempoFinalTarefa*sequenceFrameRate.numerator)
+                    frameInicial = unreal.FrameNumber(inicio)
+                    frameFinal = unreal.FrameNumber(inicio + incremento)
+                    frameAntesDoInicial = unreal.FrameNumber(inicio-1)
+                    frameAposOFinal = unreal.FrameNumber(
+                        inicio + incremento + 1)
+                    print("Tempo inicial da tarefa: " + \
+                          str(tempoInicialDaTarefa))
+                    print("Tempo final da tarefa: " + str(tempoFinalTarefa))
+                    print("Tempo por componente: " + str(tempoPorComponente))
+                    print("Frame Incremento: " + str(incremento))
+                    print("Frame inicial: " + str(frameInicial))
+                    print("Frame final: " + str(frameFinal))
+                    print("Frame anterior ao inicial: " + \
+                          str(frameAntesDoInicial))
+                    print("Frame após o final: " + str(frameAposOFinal))
+
+                    for i in range(len(componentesOrdenados)):
+
+                        print(frameInicial.value)
+
+                        if animacao == "Montagem":
+                            print("Animação: Montagem")
+                            component = componentesOrdenados[i]
+                            componentBinding = levelSequence.add_possessable(
+                                component)
+
+                            CriarTrackVisibilidadeComponente(
+                                componentBinding, frameAntesDoInicial, frameInicial)
+
+                            CriarTrackTrocaDeMaterial(
+                                componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                            CriarTrackMoverComponenteEmZ(
+                                selectedActors[0], component, componentBinding, frameInicial, frameFinal)
+
+                        elif animacao == "PreencherZ":
+                            print("Animação: PreencherZ")
+                            component = componentesOrdenados[i]
+                            componentBinding = levelSequence.add_possessable(
+                                component)
+
+                            CriarTrackVisibilidadeComponente(
+                                componentBinding, frameAntesDoInicial, frameInicial)
+
+                            CriarTrackTrocaDeMaterial(
+                                componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+                            CriarTrackParametroDeMaterial(
+                                componentBinding, frameInicial, frameFinal)
+
+                        frameAntesDoInicial = unreal.FrameNumber(
+                            frameAntesDoInicial.value + incremento)
+                        frameInicial = unreal.FrameNumber(
+                            frameInicial.value + incremento)
+                        frameFinal = unreal.FrameNumber(
+                            frameFinal.value + incremento)
+                        frameAposOFinal = unreal.FrameNumber(
+                            frameAposOFinal.value + incremento)
+
+
+def CriarLevelSequenceComplexTracksBB(coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y", inverter_coordenada_secundaria=False):
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Pega o LevelSequenceEditorSubSystem
+    editorSubsystem = unreal.get_editor_subsystem(
+        unreal.LevelSequenceEditorSubsystem)
+
+    # Adiciona o primeiro componente do ator como uma track
+    actorComponents = selectedActors[0].get_components_by_class(
+        unreal.StaticMeshComponent)
+
+    # Material Efeito
+    materialEfeito = unreal.load_object(name= '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
+
+    # Filtra os componentes pegando apenas aqueles que possuem mesh
+    componentesComMesh = []
+
+    for component in actorComponents:
+        component = unreal.StaticMeshComponent.cast(component)
+        if unreal.SystemLibrary.is_valid(component.static_mesh):
+            componentesComMesh.append(component)
+
+    # Organiza os componentes de acordo com a posição
+
+    # Determina qual índice é correspondente a coordenada escolhida
+    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[coordenada_inicial]
+    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[coordenada_secundaria]
+    inverterCoordenadaInicial = inverter_coordenada_inicial
+    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
+    tolerancia = 100
+
+    print('QUANTIDADE DE COMPONENTES COM MESH:')
+    print(len(componentesComMesh))
+
+    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
+        componentesComMesh)
+
+    print('COORDENADAS DOS COMPONENTES:')
+    print(coordenadasDosComponentes)
+
+    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
+        coordenadasDosComponentes,
+        tolerancia,
+        tolerancia,
+        coordenadaInicial,
+        coordenadaSecundaria,
+        inverterCoordenadaInicial,
+        inverterCoordenadaSecundaria)
+
+    print('COORDENADAS ORDENADAS:')
+    print(coordenadasOrdenadas)
+
+    coordenadasPlanificadas = PlanificarListaDePontos(coordenadasOrdenadas)
+
+    print('COORDENADAS ORDENADAS PLANIFICADAS:')
+    print(coordenadasPlanificadas)
+
+    indices = []
+    for coord in coordenadasPlanificadas:
+        indices.append(coordenadasDosComponentes.index(coord))
+
+    print(indices)
+
+    componentesOrdenados = []
+
+    for indice in indices:
+        componentesOrdenados.append(componentesComMesh[indice])
+
+    # frames
+    frameAntesDoInicial = unreal.FrameNumber(0)
+    frameInicial = unreal.FrameNumber(1)
+    frameFinal = unreal.FrameNumber(10)
+    frameAposOFinal = unreal.FrameNumber(11)
+
+    print(componentesComMesh[0].relative_location)
+    print(componentesOrdenados[0].relative_location)
+
+    for i in range(len(componentesOrdenados)):
+
+        component = componentesOrdenados[i]
+        componentBinding = levelSequence.add_possessable(component)
+
+        CriarTrackVisibilidadeComponente(
+            componentBinding, frameAntesDoInicial, frameInicial)
+
+        CriarTrackTrocaDeMaterial(componentBinding, component, materialEfeito,
+                                  frameAntesDoInicial, frameFinal, frameAposOFinal)
+
+        CriarTrackMoverComponenteEmZ(
+            selectedActors[0], component, componentBinding, frameInicial, frameFinal)
+
+        frameAntesDoInicial = frameAntesDoInicial + unreal.FrameNumber(10)
+        frameInicial = frameInicial + unreal.FrameNumber(10)
+        frameFinal = frameFinal + unreal.FrameNumber(10)
+        frameAposOFinal = frameAposOFinal + unreal.FrameNumber(10)
 
 
 def CriarLevelSequenceTracksB(dataTable):
@@ -1163,628 +1789,9 @@ def CriarLevelSequenceTracksBB(dataTable, dataInicial, dataFinal, usedate, usefi
     else:
         print('Nenhum dado encontrado na DataTable')
 
+ """
 
-def RemoverStringDoNomeDoAsset(string):
-
-    print('RemoverStringDoNomeDoAsset')
-
-    # Pega os assets selectionados
-    selectedAssets = unreal.EditorUtilityLibrary.get_selected_assets()
-
-    # Salva no log
-    unreal.log("Selecionados {} assets".format(len(selectedAssets)))
-    replaced = 0
-
-    # Para cada ator selecionado pegar as suas tags
-    for asset in selectedAssets:
-        assetName = unreal.SystemLibrary().get_object_name(asset)
-        if unreal.StringLibrary.contains(assetName, string, use_case=False):
-            newAssetName = unreal.StringLibrary.replace(assetName, string, "")
-            unreal.EditorUtilityLibrary.rename_asset(asset, newAssetName)
-            replaced += 1
-
-    unreal.log("Foram alterados {} assets".format(replaced))
-
-
-def PegarInformacoesDasTracks():
-
-    print('PegarInformacoesDasTracks')
-
-    # Pega a LevelSequence que esta aberta
-    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
-
-    bindings = unreal.MovieSceneSequence.get_bindings(levelSequence)
-
-    for bind in bindings:
-        tracks = bind.get_tracks()
-        for track in tracks:
-            print(f"NOME DA TRACK: {track.get_display_name()}")
-            print(track)
-            sections = track.get_sections()
-            for section in sections:
-                print(section)
-                channelsParameter = section.get_all_channels()
-                for channel in channelsParameter:
-                    print(channel)
-
-
-def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, usefirstlastdate,
-                                    coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
-                                    inverter_coordenada_secundaria=False, tolerancia=100, dividirComponentes=False):
-
-    # Calcular as datas do cronograma
-    datas = CalcularDataInicialEFinal(
-        dataTable, dataInicial, dataFinal, usedate, usefirstlastdate)
-
-    dataInicial = datas[0]
-    dataFinal = datas[1]
-
-    # Pega a LevelSequence que esta aberta
-    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
-
-    # Calcula o tempo base da sequence
-    tempoTotalSequence = levelSequence.get_playback_end_seconds()
-    diasTotais = CalcularDiasTotais(dataInicial, dataFinal)
-    print('Dias totais: ' + str(diasTotais))
-    sequenceFrameRate = levelSequence.get_display_rate()
-
-    # Pega as colunas da DataTable
-    dataTableColumns = PegarDadosDataTableCronograma(dataTable)
-
-    # Cria a lista de objetos Tarefa
-    tarefas = []
-
-    if len(dataTableColumns) > 0:
-
-        # Para cada linha das colunas colunas
-        for i in range(len(dataTableColumns[0])):
-
-            tarefa = prefixTarefa + str(dataTableColumns[0][i])  # Nome da tarefa
-            dataInicialTarefa = unreal.MathLibrary.date_time_from_string(
-                dataTableColumns[1][i])
-            dataFinalTarefa = unreal.MathLibrary.date_time_from_string(
-                dataTableColumns[2][i])
-            animacao = dataTableColumns[4][i]
-            materialEfeito = unreal.load_object(name= dataTableColumns[3][i], outer = None)
-            tempoInicialDaTarefa = CalcularTempoInicialDaTarefa(
-                tempoTotalSequence, diasTotais, dataInicial, dataInicialTarefa)
-            tempoFinalTarefa = CalcularTempoFinalDaTarefa(
-                tempoTotalSequence, diasTotais, dataInicial, dataFinalTarefa)
-
-            tarefas.append(Tarefa(tarefa, dataInicialTarefa, dataFinalTarefa,
-                           animacao, materialEfeito, tempoInicialDaTarefa, tempoFinalTarefa))
-
-    # Pega os atores selectionados
-    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
-    selectedActors = actorSubSystem.get_selected_level_actors()
-
-    # Pega o LevelSequenceEditorSubSystem
-    editorSubsystem = unreal.get_editor_subsystem(
-        unreal.LevelSequenceEditorSubsystem)
-
-    # Caso tenham colunas
-    if len(dataTableColumns) > 0:
-
-        # Para cada ator selecionado
-        for actor in selectedActors:
-
-            actorTags = actor.tags
-
-            tarefaDoAtor = ""
-
-            for tag in actorTags:
-                tagString = unreal.StringLibrary.conv_name_to_string(tag)
-                if tagString.startswith("AYTF_"):
-                    tarefaDoAtor = tagString
-
-            if tarefaDoAtor is not None:
-
-                tarefaCronograma = next(
-                    (tarefa for tarefa in tarefas if tarefa.tarefa == tarefaDoAtor), None)
-
-                if tarefaCronograma is not None:
-
-                    print('Tarefa do cronograma: ' + \
-                          str(tarefaCronograma.tarefa))
-                    print('Animação da tarefa ' + \
-                          str(tarefaCronograma.animacao))
-
-                    # Adiciona o primeiro componente do ator como uma track
-                    actorComponents = actor.get_components_by_class(
-                        unreal.StaticMeshComponent)
-
-                    # Animação da tarefa
-                    animacao = tarefaCronograma.animacao
-
-                    # Material Efeito
-                    materialEfeito = tarefaCronograma.materialEfeito
-
-                    # Filtra os componentes pegando apenas aqueles que possuem mesh
-                    componentesComMesh = []
-
-                    for component in actorComponents:
-                        print(component.get_name())
-                        component = unreal.StaticMeshComponent.cast(component)
-                        if unreal.SystemLibrary.is_valid(component.static_mesh):
-                            componentesComMesh.append(component)
-
-                    # Organiza os componentes de acordo com a posição
-
-                    # Determina qual índice é correspondente a coordenada escolhida
-                    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[
-                        coordenada_inicial]
-                    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[
-                        coordenada_secundaria]
-                    inverterCoordenadaInicial = inverter_coordenada_inicial
-                    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
-
-                    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
-                        componentesComMesh)
-
-                    # print('COORDENADAS DOS COMPONENTES:')
-                    # print(coordenadasDosComponentes)
-
-                    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
-                        coordenadasDosComponentes,
-                        tolerancia,
-                        tolerancia,
-                        coordenadaInicial,
-                        coordenadaSecundaria,
-                        inverterCoordenadaInicial,
-                        inverterCoordenadaSecundaria)
-
-                    # print('COORDENADAS ORDENADAS:')
-                    # print(coordenadasOrdenadas)
-
-                    coordenadasPlanificadas = PlanificarListaDePontos(
-                        coordenadasOrdenadas)
-
-                    # print('COORDENADAS ORDENADAS PLANIFICADAS:')
-                    # print(coordenadasPlanificadas)
-
-                    indices = []
-                    for coord in coordenadasPlanificadas:
-                        indices.append(coordenadasDosComponentes.index(coord))
-
-                    # print(indices)
-
-                    componentesOrdenados = []
-
-                    for indice in indices:
-                        componentesOrdenados.append(componentesComMesh[indice])
-                        print(componentesComMesh[indice])
-
-                    # Calculo dos tempos da tarefa
-
-                    tempoPorComponente = (tarefaCronograma.tempoFinalTarefa - \
-                                          tarefaCronograma.tempoInicialDaTarefa) / len(componentesComMesh)
-                    incremento = unreal.MathLibrary.round(
-                        tempoPorComponente*sequenceFrameRate.numerator)
-                    inicio = unreal.MathLibrary.round(
-                        tarefaCronograma.tempoInicialDaTarefa*sequenceFrameRate.numerator)
-                    fim = unreal.MathLibrary.round(
-                        tarefaCronograma.tempoFinalTarefa*sequenceFrameRate.numerator)
-
-                    if dividirComponentes:
-                        frameInicial = unreal.FrameNumber(inicio)
-                        frameFinal = unreal.FrameNumber(inicio + incremento)
-                        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
-                        frameAposOFinal = unreal.FrameNumber(
-                            inicio + incremento + 1)
-                        print("Tempo inicial da tarefa: " + \
-                              str(tarefaCronograma.tempoInicialDaTarefa))
-                        print("Tempo final da tarefa: " + \
-                              str(tarefaCronograma.tempoFinalTarefa))
-                        print("Tempo por componente: " + \
-                              str(tempoPorComponente))
-                        print("Frame Incremento: " + str(incremento))
-                        print("Frame inicial: " + str(frameInicial))
-                        print("Frame final: " + str(frameFinal))
-                        print("Frame anterior ao inicial: " + \
-                              str(frameAntesDoInicial))
-                        print("Frame após o final: " + str(frameAposOFinal))
-
-                        for i in range(len(componentesOrdenados)):
-
-                            if animacao == "Montagem":
-                                print("Animação: Montagem")
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackMoverComponenteEmZ(
-                                    selectedActors[0], component, componentBinding, frameInicial, frameFinal)
-
-                            elif animacao == "PreencherZ":
-                                print("Animação: PreencherZ")
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackParametroDeMaterial(
-                                    componentBinding, frameInicial, frameFinal)
-
-                            else:
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackParametroDeMaterial(
-                                    componentBinding, frameInicial, frameFinal)
-
-                            frameAntesDoInicial = unreal.FrameNumber(
-                                frameAntesDoInicial.value + incremento)
-                            frameInicial = unreal.FrameNumber(
-                                frameInicial.value + incremento)
-                            frameFinal = unreal.FrameNumber(
-                                frameFinal.value + incremento)
-                            frameAposOFinal = unreal.FrameNumber(
-                                frameAposOFinal.value + incremento)
-
-                    else:
-
-                        frameInicial = unreal.FrameNumber(inicio)
-                        frameFinal = unreal.FrameNumber(fim)
-                        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
-                        frameAposOFinal = unreal.FrameNumber(fim + 1)
-
-                        print(frameInicial)
-                        print(frameFinal)
-                        print(animacao)
-
-                        for i in range(len(componentesOrdenados)):
-
-                            if animacao == "Montagem":
-                                print("Animação: Montagem")
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackMoverElementoEmZ(
-                                    actor, componentBinding, frameInicial, frameFinal)
-
-                            elif animacao == "PreencherZ":
-                                print("Animação: PreencherZ")
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackParametroDeMaterial(
-                                    componentBinding, frameInicial, frameFinal)
-
-                            elif animacao == "Simples":
-                                print("Animação: Simples")
-                                component = componentesOrdenados[i]
-                                componentBinding = levelSequence.add_possessable(
-                                    component)
-
-                                CriarTrackVisibilidadeComponente(
-                                    componentBinding, frameAntesDoInicial, frameInicial)
-
-                                CriarTrackTrocaDeMaterial(
-                                    componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                                CriarTrackParametroDeMaterial(
-                                    componentBinding, frameInicial, frameFinal)
-
-
-def CriarLevelSequenceComplexTracksB(dataTable, dataInicial, dataFinal, usedate, usefirstlastdate,
-                                    coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
-                                     inverter_coordenada_secundaria=False, tolerancia=100):
-
-    # Calcular as datas do cronograma
-    datas = CalcularDataInicialEFinal(
-        dataTable, dataInicial, dataFinal, usedate, usefirstlastdate)
-
-    dataInicial = datas[0]
-    dataFinal = datas[1]
-
-    # Pega a LevelSequence que esta aberta
-    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
-
-    # Calcula o tempo base da sequence
-    tempoTotalSequence = levelSequence.get_playback_end_seconds()
-    diasTotais = CalcularDiasTotais(dataInicial, dataFinal)
-    print('Dias totais: ' + str(diasTotais))
-    sequenceFrameRate = levelSequence.get_display_rate()
-
-    # Pega as colunas da DataTable
-    dataTableColumns = PegarDadosDataTableCronograma(dataTable)
-
-    # Pega os atores selectionados
-    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
-    selectedActors = actorSubSystem.get_selected_level_actors()
-
-    # Pega o LevelSequenceEditorSubSystem
-    editorSubsystem = unreal.get_editor_subsystem(
-        unreal.LevelSequenceEditorSubsystem)
-
-    # Caso tenham colunas
-    if len(dataTableColumns) > 0:
-
-        # Para cada coluna
-        for i in range(len(dataTableColumns[0])):
-
-            tarefa = prefixTarefa + str(dataTableColumns[0][i])  # Nome da tarefa
-            dataInicialTarefa = unreal.MathLibrary.date_time_from_string(
-                dataTableColumns[1][i])
-            dataFinalTarefa = unreal.MathLibrary.date_time_from_string(
-                dataTableColumns[2][i])
-            animacao = dataTableColumns[4][i]
-            materialEfeito = unreal.load_object(name= dataTableColumns[3][i], outer = None)
-            tempoInicialDaTarefa = CalcularTempoInicialDaTarefa(
-                tempoTotalSequence, diasTotais, dataInicial, dataInicialTarefa)
-            tempoFinalTarefa = CalcularTempoFinalDaTarefa(
-                tempoTotalSequence, diasTotais, dataInicial, dataFinalTarefa)
-
-            # Para cada ator selecionado
-            for actor in selectedActors:
-
-                if unreal.Array.count(actor.tags, unreal.Name.cast(tarefa)) > 0:  # Caso tenha uma tarefa da dataTable
-
-                    # Adiciona o primeiro componente do ator como uma track
-                    actorComponents = selectedActors[0].get_components_by_class(
-                        unreal.StaticMeshComponent)
-
-                    # Material Efeito
-                    materialEfeito = unreal.load_object(name= '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
-
-                    # Filtra os componentes pegando apenas aqueles que possuem mesh
-                    componentesComMesh = []
-
-                    for component in actorComponents:
-                        component = unreal.StaticMeshComponent.cast(component)
-                        if unreal.SystemLibrary.is_valid(component.static_mesh):
-                            componentesComMesh.append(component)
-
-                    # Organiza os componentes de acordo com a posição
-
-                    # Determina qual índice é correspondente a coordenada escolhida
-                    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[
-                        coordenada_inicial]
-                    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[
-                        coordenada_secundaria]
-                    inverterCoordenadaInicial = inverter_coordenada_inicial
-                    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
-
-                    print('QUANTIDADE DE COMPONENTES COM MESH:')
-                    print(len(componentesComMesh))
-
-                    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
-                        componentesComMesh)
-
-                    # print('COORDENADAS DOS COMPONENTES:')
-                    # print(coordenadasDosComponentes)
-
-                    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
-                        coordenadasDosComponentes,
-                        tolerancia,
-                        tolerancia,
-                        coordenadaInicial,
-                        coordenadaSecundaria,
-                        inverterCoordenadaInicial,
-                        inverterCoordenadaSecundaria)
-
-                    # print('COORDENADAS ORDENADAS:')
-                    # print(coordenadasOrdenadas)
-
-                    coordenadasPlanificadas = PlanificarListaDePontos(
-                        coordenadasOrdenadas)
-
-                    # print('COORDENADAS ORDENADAS PLANIFICADAS:')
-                    # print(coordenadasPlanificadas)
-
-                    indices = []
-                    for coord in coordenadasPlanificadas:
-                        indices.append(coordenadasDosComponentes.index(coord))
-
-                    # print(indices)
-
-                    componentesOrdenados = []
-
-                    for indice in indices:
-                        componentesOrdenados.append(componentesComMesh[indice])
-
-                    # Calculo dos tempos da tarefa
-                    tempoPorComponente = (
-                        tempoFinalTarefa - tempoInicialDaTarefa) / len(componentesComMesh)
-                    incremento = unreal.MathLibrary.round(
-                        tempoPorComponente*sequenceFrameRate.numerator)
-                    inicio = unreal.MathLibrary.round(
-                        tempoInicialDaTarefa*sequenceFrameRate.numerator)
-                    fim = unreal.MathLibrary.round(
-                        tempoFinalTarefa*sequenceFrameRate.numerator)
-                    frameInicial = unreal.FrameNumber(inicio)
-                    frameFinal = unreal.FrameNumber(inicio + incremento)
-                    frameAntesDoInicial = unreal.FrameNumber(inicio-1)
-                    frameAposOFinal = unreal.FrameNumber(
-                        inicio + incremento + 1)
-                    print("Tempo inicial da tarefa: " + \
-                          str(tempoInicialDaTarefa))
-                    print("Tempo final da tarefa: " + str(tempoFinalTarefa))
-                    print("Tempo por componente: " + str(tempoPorComponente))
-                    print("Frame Incremento: " + str(incremento))
-                    print("Frame inicial: " + str(frameInicial))
-                    print("Frame final: " + str(frameFinal))
-                    print("Frame anterior ao inicial: " + \
-                          str(frameAntesDoInicial))
-                    print("Frame após o final: " + str(frameAposOFinal))
-
-                    for i in range(len(componentesOrdenados)):
-
-                        print(frameInicial.value)
-
-                        if animacao == "Montagem":
-                            print("Animação: Montagem")
-                            component = componentesOrdenados[i]
-                            componentBinding = levelSequence.add_possessable(
-                                component)
-
-                            CriarTrackVisibilidadeComponente(
-                                componentBinding, frameAntesDoInicial, frameInicial)
-
-                            CriarTrackTrocaDeMaterial(
-                                componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                            CriarTrackMoverComponenteEmZ(
-                                selectedActors[0], component, componentBinding, frameInicial, frameFinal)
-
-                        elif animacao == "PreencherZ":
-                            print("Animação: PreencherZ")
-                            component = componentesOrdenados[i]
-                            componentBinding = levelSequence.add_possessable(
-                                component)
-
-                            CriarTrackVisibilidadeComponente(
-                                componentBinding, frameAntesDoInicial, frameInicial)
-
-                            CriarTrackTrocaDeMaterial(
-                                componentBinding, component, materialEfeito, frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-                            CriarTrackParametroDeMaterial(
-                                componentBinding, frameInicial, frameFinal)
-
-                        frameAntesDoInicial = unreal.FrameNumber(
-                            frameAntesDoInicial.value + incremento)
-                        frameInicial = unreal.FrameNumber(
-                            frameInicial.value + incremento)
-                        frameFinal = unreal.FrameNumber(
-                            frameFinal.value + incremento)
-                        frameAposOFinal = unreal.FrameNumber(
-                            frameAposOFinal.value + incremento)
-
-
-def CriarLevelSequenceComplexTracksBB(coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y", inverter_coordenada_secundaria=False):
-
-    # Pega a LevelSequence que esta aberta
-    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
-
-    # Pega os atores selectionados
-    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
-    selectedActors = actorSubSystem.get_selected_level_actors()
-
-    # Pega o LevelSequenceEditorSubSystem
-    editorSubsystem = unreal.get_editor_subsystem(
-        unreal.LevelSequenceEditorSubsystem)
-
-    # Adiciona o primeiro componente do ator como uma track
-    actorComponents = selectedActors[0].get_components_by_class(
-        unreal.StaticMeshComponent)
-
-    # Material Efeito
-    materialEfeito = unreal.load_object(name= '/Game/Materials/MS_SimpleGlow_Inst', outer = None)
-
-    # Filtra os componentes pegando apenas aqueles que possuem mesh
-    componentesComMesh = []
-
-    for component in actorComponents:
-        component = unreal.StaticMeshComponent.cast(component)
-        if unreal.SystemLibrary.is_valid(component.static_mesh):
-            componentesComMesh.append(component)
-
-    # Organiza os componentes de acordo com a posição
-
-    # Determina qual índice é correspondente a coordenada escolhida
-    coordenadaInicial = {"x": 0, "y": 1, "z": 2}[coordenada_inicial]
-    coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[coordenada_secundaria]
-    inverterCoordenadaInicial = inverter_coordenada_inicial
-    inverterCoordenadaSecundaria = inverter_coordenada_secundaria
-    tolerancia = 100
-
-    print('QUANTIDADE DE COMPONENTES COM MESH:')
-    print(len(componentesComMesh))
-
-    coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
-        componentesComMesh)
-
-    print('COORDENADAS DOS COMPONENTES:')
-    print(coordenadasDosComponentes)
-
-    coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
-        coordenadasDosComponentes,
-        tolerancia,
-        tolerancia,
-        coordenadaInicial,
-        coordenadaSecundaria,
-        inverterCoordenadaInicial,
-        inverterCoordenadaSecundaria)
-
-    print('COORDENADAS ORDENADAS:')
-    print(coordenadasOrdenadas)
-
-    coordenadasPlanificadas = PlanificarListaDePontos(coordenadasOrdenadas)
-
-    print('COORDENADAS ORDENADAS PLANIFICADAS:')
-    print(coordenadasPlanificadas)
-
-    indices = []
-    for coord in coordenadasPlanificadas:
-        indices.append(coordenadasDosComponentes.index(coord))
-
-    print(indices)
-
-    componentesOrdenados = []
-
-    for indice in indices:
-        componentesOrdenados.append(componentesComMesh[indice])
-
-    # frames
-    frameAntesDoInicial = unreal.FrameNumber(0)
-    frameInicial = unreal.FrameNumber(1)
-    frameFinal = unreal.FrameNumber(10)
-    frameAposOFinal = unreal.FrameNumber(11)
-
-    print(componentesComMesh[0].relative_location)
-    print(componentesOrdenados[0].relative_location)
-
-    for i in range(len(componentesOrdenados)):
-
-        component = componentesOrdenados[i]
-        componentBinding = levelSequence.add_possessable(component)
-
-        CriarTrackVisibilidadeComponente(
-            componentBinding, frameAntesDoInicial, frameInicial)
-
-        CriarTrackTrocaDeMaterial(componentBinding, component, materialEfeito,
-                                  frameAntesDoInicial, frameFinal, frameAposOFinal)
-
-        CriarTrackMoverComponenteEmZ(
-            selectedActors[0], component, componentBinding, frameInicial, frameFinal)
-
-        frameAntesDoInicial = frameAntesDoInicial + unreal.FrameNumber(10)
-        frameInicial = frameInicial + unreal.FrameNumber(10)
-        frameFinal = frameFinal + unreal.FrameNumber(10)
-        frameAposOFinal = frameAposOFinal + unreal.FrameNumber(10)
+# endregion
 
 # endregion
 
