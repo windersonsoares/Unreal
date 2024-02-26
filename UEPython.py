@@ -559,7 +559,7 @@ def RemoverStringDoNomeDoAsset(string):
     unreal.log("Foram alterados {} assets".format(replaced))
 
 
-def PegarInformacoesDasTracks():
+def PegarInformacoesDasTracks(tempoTotal):
 
     print('PegarInformacoesDasTracks')
 
@@ -869,6 +869,201 @@ def CriarLevelSequenceComplexTracks(dataTable, dataInicial, dataFinal, usedate, 
 
                                 CriarTrackParametroDeMaterial(
                                     componentBinding, frameInicial, frameFinal)
+
+
+def CriarLevelSequenceTranslateToPlace(coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
+                                       inverter_coordenada_secundaria=False, tolerancia=100, tempo_da_animacao=10):
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+    sequenceFrameRate = levelSequence.get_display_rate()
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Para cada ator selecionado
+    for actor in selectedActors:
+
+        # Adiciona o primeiro componente do ator como uma track
+        actorComponents = actor.get_components_by_class(unreal.StaticMeshComponent)
+
+        # Filtra os componentes pegando apenas aqueles que possuem mesh
+        componentesComMesh = []
+
+        for component in actorComponents:
+            #print(component.get_name())
+            component = unreal.StaticMeshComponent.cast(component)
+            if unreal.SystemLibrary.is_valid(component.static_mesh):
+                componentesComMesh.append(component)
+        
+        # Organiza os componentes de acordo com a posição
+
+        # Determina qual índice é correspondente a coordenada escolhida
+        coordenadaInicial = {"x": 0, "y": 1, "z": 2}[coordenada_inicial]
+        coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[coordenada_secundaria]
+        inverterCoordenadaInicial = inverter_coordenada_inicial
+        inverterCoordenadaSecundaria = inverter_coordenada_secundaria
+
+        coordenadasDosComponentes = PegarLocalizacaoDosComponentes(
+            componentesComMesh)
+
+        # print('COORDENADAS DOS COMPONENTES:')
+        # print(coordenadasDosComponentes)
+
+        coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
+            coordenadasDosComponentes,
+            tolerancia,
+            tolerancia,
+            coordenadaInicial,
+            coordenadaSecundaria,
+            inverterCoordenadaInicial,
+            inverterCoordenadaSecundaria)
+
+        # print('COORDENADAS ORDENADAS:')
+        # print(coordenadasOrdenadas)
+
+        coordenadasPlanificadas = PlanificarListaDePontos(
+            coordenadasOrdenadas)
+
+        # print('COORDENADAS ORDENADAS PLANIFICADAS:')
+        # print(coordenadasPlanificadas)
+
+        indices = []
+        for coord in coordenadasPlanificadas:
+            indices.append(coordenadasDosComponentes.index(coord))
+
+        # print(indices)
+
+        componentesOrdenados = []
+
+        for indice in indices:
+            componentesOrdenados.append(componentesComMesh[indice])
+            #print(componentesComMesh[indice])
+
+
+
+        tempoPorComponente = ( tempo_da_animacao / len(componentesComMesh))
+        incremento = unreal.MathLibrary.round(tempoPorComponente*sequenceFrameRate.numerator)
+        inicio = unreal.MathLibrary.round(0)
+        fim = unreal.MathLibrary.round(tempo_da_animacao*sequenceFrameRate.numerator)
+        
+        frameInicial = unreal.FrameNumber(inicio)
+        frameFinal = unreal.FrameNumber(inicio + incremento)
+        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
+        frameAposOFinal = unreal.FrameNumber(inicio + incremento + 1)
+
+        print(tempoPorComponente)
+        
+
+        for i in range(len(componentesOrdenados)):
+
+            component = componentesOrdenados[i]
+            componentBinding = levelSequence.add_possessable(
+            component)
+
+            CriarTrackVisibilidadeComponente(
+            componentBinding, frameAntesDoInicial, frameInicial)
+
+            
+            CriarTrackMoverComponenteEmZ(
+            selectedActors[0], component, componentBinding, frameInicial, frameFinal)
+
+            frameAntesDoInicial = unreal.FrameNumber(frameAntesDoInicial.value + incremento)
+            frameInicial = unreal.FrameNumber(frameInicial.value + incremento)
+            frameFinal = unreal.FrameNumber(frameFinal.value + incremento)
+            frameAposOFinal = unreal.FrameNumber(frameAposOFinal.value + incremento)
+
+def CriarLevelSequenceChildActorTranslateToPlace(coordenada_inicial="x", inverter_coordenada_inicial=False, coordenada_secundaria="y",
+                                       inverter_coordenada_secundaria=False, tolerancia=100, tempo_da_animacao=10):
+
+    # Pega a LevelSequence que esta aberta
+    levelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
+    sequenceFrameRate = levelSequence.get_display_rate()
+
+    # Pega os atores selectionados
+    actorSubSystem = unreal.get_editor_subsystem(actorUtils)
+    selectedActors = actorSubSystem.get_selected_level_actors()
+
+    # Para cada ator selecionado
+    for actor in selectedActors:
+
+        # Adiciona o primeiro componente do ator como uma track
+        actorChilds = actor.get_all_child_actors(include_descendants=True)
+
+        for child in actorChilds:
+            print(child)
+              
+        # Organiza os componentes de acordo com a posição
+
+        # Determina qual índice é correspondente a coordenada escolhida
+        coordenadaInicial = {"x": 0, "y": 1, "z": 2}[coordenada_inicial]
+        coordenadaSecundaria = {"x": 0, "y": 1, "z": 2}[coordenada_secundaria]
+        inverterCoordenadaInicial = inverter_coordenada_inicial
+        inverterCoordenadaSecundaria = inverter_coordenada_secundaria
+
+        coordenadasDosChildActors = PegarLocalizacaoDosAtores(actorChilds)
+        print('COORDENADAS DOS COMPONENTES:')
+
+        coordenadasOrdenadas = AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(
+            coordenadasDosChildActors,
+            tolerancia,
+            tolerancia,
+            coordenadaInicial,
+            coordenadaSecundaria,
+            inverterCoordenadaInicial,
+            inverterCoordenadaSecundaria)
+
+        print('COORDENADAS ORDENADAS:')
+
+        coordenadasPlanificadas = PlanificarListaDePontos(
+            coordenadasOrdenadas)
+
+        # print('COORDENADAS ORDENADAS PLANIFICADAS:')
+        # print(coordenadasPlanificadas)
+
+        indices = []
+        for coord in coordenadasPlanificadas:
+            indices.append(coordenadasDosChildActors.index(coord))
+
+        # print(indices)
+
+        actorsOrdenados = []
+
+        for indice in indices:
+            actorsOrdenados.append(actorChilds[indice])
+            #print(componentesComMesh[indice])
+
+        
+        tempoPorActor = ( tempo_da_animacao / len(actorChilds))
+        incremento = unreal.MathLibrary.round(tempoPorActor*sequenceFrameRate.numerator)
+        inicio = unreal.MathLibrary.round(0)
+        fim = unreal.MathLibrary.round(tempo_da_animacao*sequenceFrameRate.numerator)
+        
+        frameInicial = unreal.FrameNumber(inicio)
+        frameFinal = unreal.FrameNumber(inicio + incremento)
+        frameAntesDoInicial = unreal.FrameNumber(inicio-1)
+        frameAposOFinal = unreal.FrameNumber(inicio + incremento + 1)
+
+        print(tempoPorActor)
+        
+
+        for i in range(len(actorsOrdenados)):
+
+            component = actorsOrdenados[i]
+            componentBinding = levelSequence.add_possessable(
+            component)
+
+            CriarTrackVisibilidadeActor(
+            componentBinding, frameAntesDoInicial, frameInicial)
+
+            
+            CriarTrackMoverActorEmZ(componentBinding, frameInicial, frameFinal, 500)
+
+            frameAntesDoInicial = unreal.FrameNumber(frameAntesDoInicial.value + incremento)
+            frameInicial = unreal.FrameNumber(frameInicial.value + incremento)
+            frameFinal = unreal.FrameNumber(frameFinal.value + incremento)
+            frameAposOFinal = unreal.FrameNumber(frameAposOFinal.value + incremento)
 
 
 # region CÓDIGO ANTIGO
@@ -2003,6 +2198,7 @@ def CalcularTempoFinalDaTarefa(tempoDaSequence, diasTotais, dataInicial, dataFin
 
     return tempoFinal
 
+
 def AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia(pontos, toleranciaA, toleranciaB, coordenadaA=0, coordenadaB=1, inverterA=False, inverterB=False):
     print('AgruparEOrdenarPontosEmDuasCoordenadasComTolerancia')
     gruposDePontos = AgruparPontosComTolerancia(
@@ -2089,6 +2285,18 @@ def PegarLocalizacaoDosComponentes(componentes):
 
     return locacoes
 
+def PegarLocalizacaoDosAtores(atores):
+    print("PegarLocalizacaoDosAtores")
+
+    locacoes = []
+
+    for ator in atores:
+        ator = unreal.StaticMeshActor.cast(ator)
+        # componentLocation = component.relative_location
+        actorLocation = ator.get_actor_location()
+        locacoes.append([actorLocation.x, actorLocation.y,actorLocation.z])
+
+    return locacoes
 
 def CriarTrackPadraoInicial(actor, levelSequence):
     # print("CriarTrackPadraoInicial")
@@ -2130,6 +2338,7 @@ def CriarTrackVisibilidade(componentBinding, frameAntesDoInicial, frameInicial):
     visibilitySection.set_start_frame_bounded(True)
     visibilitySection.set_end_frame_bounded(True)
 
+
 def CriarTrackVisibilidadeActor(componentBinding, frameAntesDoInicial, frameInicial):
     print("CriarTrackVisibilidadeActor")
 
@@ -2158,6 +2367,7 @@ def CriarTrackVisibilidadeActor(componentBinding, frameAntesDoInicial, frameInic
     # Define o range da seção
     visibilitySection.set_start_frame_bounded(True)
     visibilitySection.set_end_frame_bounded(True)
+
 
 def CriarTrackVisibilidadeComponente(componentBinding, frameAntesDoInicial, frameInicial):
     # print("CriarTrackVisibilidadeComponente")
@@ -2399,6 +2609,57 @@ def CriarTrackMoverComponenteEmZ(actor, component, componentBinding, frameInicia
     # Define o range da seção
     transformSection.set_start_frame_bounded(True)
     transformSection.set_end_frame_bounded(True)
+
+
+def CriarTrackMoverActorEmZ(componentBinding, frameInicial, frameFinal, distancia):
+    print("CriarTrackMoverActorEmZ")
+
+    # Adiciona uma track Transform ao ator
+    elementMoveTrack = componentBinding.add_track(
+        unreal.MovieScene3DTransformTrack)
+
+    # Refresh na Sequence para mostrar as alterações
+    unreal.LevelSequenceEditorBlueprintLibrary.refresh_current_level_sequence()
+
+    # Adiciona uma seção com propriedade as tracks
+    transformSection = elementMoveTrack.add_section()
+
+    # Cast as seçãos criadas para seus tipos corretos
+    transformSection = unreal.MovieScene3DTransformSection.cast(
+        transformSection)
+
+    # Pega todos os channels da seção
+    channelsTransform = transformSection.get_all_channels()
+
+    for channel in channelsTransform:
+        if channel.get_name().startswith("Location.Z"):
+            # Cast o channel
+            doubleChannel = unreal.MovieSceneScriptingDoubleChannel.cast(
+                channel)
+            # doubleChannel.add_key(frameInicial, actorMeioTamanho.z * 2,0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+            doubleChannel.add_key(
+                frameInicial, distancia, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+            doubleChannel.add_key(frameFinal, 0, 0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        if channel.get_name().startswith("Location.X"):
+            # Cast o channel
+            doubleChannel = unreal.MovieSceneScriptingDoubleChannel.cast(
+                channel)
+            doubleChannel.add_key(
+                frameInicial, 0, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+            doubleChannel.add_key(frameFinal, 0, 0,unreal.SequenceTimeUnit.DISPLAY_RATE)
+        if channel.get_name().startswith("Location.Y"):
+            # Cast o channel
+            doubleChannel = unreal.MovieSceneScriptingDoubleChannel.cast(
+                channel)
+            doubleChannel.add_key(
+                frameInicial, 0, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+            doubleChannel.add_key(
+                frameFinal, 0, 0, unreal.SequenceTimeUnit.DISPLAY_RATE)
+
+    # Define o range da seção
+    transformSection.set_start_frame_bounded(True)
+    transformSection.set_end_frame_bounded(True)
+
 
 
 def CriarTrackMoverComponenteEmZAteValor(actor, component, componentBinding, frameInicial, frameFinal):
